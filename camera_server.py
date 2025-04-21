@@ -1,0 +1,79 @@
+from flask import Flask, Response, request
+import cv2
+import threading
+import datetime
+
+app = Flask(__name__)
+camera_lock = threading.Lock()
+
+def capture_image(width=640, height=480, with_date_time_label = False):
+    with camera_lock:
+        cap = cv2.VideoCapture(0)
+        try:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)        
+            ret, frame = cap.read()
+        finally:
+            cap.release()
+    if not ret:
+        return None
+    if with_date_time_label:
+        frame = print_date_time_label(frame)
+    _, buffer = cv2.imencode('.jpg', frame)
+    return buffer.tobytes()
+
+
+def print_date_time_label(frame):
+    # Get current datetime as string
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Set font and position
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.6
+    thickness = 2
+    border_thickness = thickness + 2
+
+    # Calculate the size of the text
+    (text_width, text_height), _ = cv2.getTextSize(timestamp, font, scale, thickness)
+    x = frame.shape[1] - text_width - 10  # 10 px from right
+    y = frame.shape[0] - 10               # 10 px from bottom
+
+    # Draw black border (stroke)
+    cv2.putText(frame, timestamp, (x, y), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+    # Draw white text
+    cv2.putText(frame, timestamp, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    return frame
+
+
+@app.route('/')
+def serve_foto():
+
+    resolution = request.args.get("res", "640x480")  # default to 640x480 if not provided
+
+    try:
+        width, height = map(int, resolution.lower().split("x"))
+    except Exception:
+        return "Invalid resolution format. Use ?res=WIDTHxHEIGHT", 400
+
+    image = capture_image(width, height, True)
+    if image is None:
+        return "Erro ao capturar imagem", 500
+    return Response(image, mimetype='image/jpeg')
+
+@app.route('/foto')
+def serve_foto_with_date_label():
+
+    resolution = request.args.get("res", "640x480")  # default to 640x480 if not provided
+
+    try:
+        width, height = map(int, resolution.lower().split("x"))
+    except Exception:
+        return "Invalid resolution format. Use ?res=WIDTHxHEIGHT", 400
+
+    image = capture_image(width, height, True)
+    if image is None:
+        return "Erro ao capturar imagem", 500
+    return Response(image, mimetype='image/jpeg')
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, threaded=True, debug=True)
