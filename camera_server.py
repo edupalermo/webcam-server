@@ -1,14 +1,16 @@
 from flask import Flask, Response, request
 import cv2
+import numpy as np
 import threading
 import datetime
 
 app = Flask(__name__)
 camera_lock = threading.Lock()
 
-def capture_image(width=640, height=480, with_date_time_label = False):
+def capture_image(camera=0, width=640, height=480, with_date_time_label = False, flip = False):
     with camera_lock:
-        cap = cv2.VideoCapture(0)
+        print(f"Camera: {camera}")
+        cap = cv2.VideoCapture(camera)
         try:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)        
@@ -17,6 +19,9 @@ def capture_image(width=640, height=480, with_date_time_label = False):
             cap.release()
     if not ret:
         return None
+    if flip:
+        frame = cv2.flip(frame, -1)
+    frame = auto_brightness_contrast(frame)
     if with_date_time_label:
         frame = print_date_time_label(frame)
     _, buffer = cv2.imencode('.jpg', frame)
@@ -45,7 +50,36 @@ def print_date_time_label(frame):
     return frame
 
 
-@app.route('/')
+def auto_brightness_contrast(image, clip_hist_percent=1):
+    """
+    Automatically adjusts brightness and contrast using histogram clipping.
+    clip_hist_percent: percentage of histogram to clip for contrast stretching.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Calculate grayscale histogram
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    hist_size = len(hist)
+
+    # Calculate cumulative distribution from the histogram
+    accumulator = hist.cumsum()
+
+    # Locate points to clip
+    maximum = accumulator[-1]
+    clip_amount = clip_hist_percent * maximum / 100.0
+    clip_low = np.searchsorted(accumulator, clip_amount)
+    clip_high = np.searchsorted(accumulator, maximum - clip_amount)
+
+    # Calculate alpha and beta
+    alpha = 255 / (clip_high - clip_low)
+    beta = -clip_low * alpha
+
+    # Apply to original image
+    adjusted = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+    return adjusted
+
+
+@app.route('/old')
 def serve_foto():
 
     resolution = request.args.get("res", "640x480")  # default to 640x480 if not provided
@@ -55,12 +89,13 @@ def serve_foto():
     except Exception:
         return "Invalid resolution format. Use ?res=WIDTHxHEIGHT", 400
 
-    image = capture_image(width, height, True)
+    image = capture_image(0, width, height, True)
     if image is None:
         return "Erro ao capturar imagem", 500
     return Response(image, mimetype='image/jpeg')
 
-@app.route('/foto')
+
+@app.route('/')
 def serve_foto_with_date_label():
 
     resolution = request.args.get("res", "640x480")  # default to 640x480 if not provided
@@ -70,7 +105,11 @@ def serve_foto_with_date_label():
     except Exception:
         return "Invalid resolution format. Use ?res=WIDTHxHEIGHT", 400
 
-    image = capture_image(width, height, True)
+    camera = request.args.get("camera", "0")
+
+    flip = not(request.args.get("flip", "0") == "0")
+
+    image = capture_image(int(camera), width, height, True, flip)
     if image is None:
         return "Erro ao capturar imagem", 500
     return Response(image, mimetype='image/jpeg')
