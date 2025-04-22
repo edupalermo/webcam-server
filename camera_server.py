@@ -6,6 +6,7 @@ import datetime
 import time
 import gpiod
 from gpiod.line import Direction, Value
+import os
 
 CHIP_NAME = '/dev/gpiochip1'
 LINE_OFFSET = 72
@@ -62,6 +63,37 @@ def print_date_time_label(frame):
     # Draw white text
     cv2.putText(frame, timestamp, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
     return frame
+
+
+def save_file(image_data, path):
+    # Generate timestamped filename
+    prefix = "capture_"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{prefix}{timestamp}.jpg"
+    save_path = os.path.join(path, filename)
+
+    # Save to file
+    with open(save_path, "wb") as f:
+        f.write(image_data)
+
+
+@app.route('/batch', methods=['POST'])
+def batch():
+    turn_light_on()
+    try:
+        image_data = capture_image(camera=3, width=640, height=480, with_date_time_label=False, flip=False, light=False)
+        if not image_data:
+            return "It was not possible to generate an image", 500
+        save_file("/home/palermo/webcam-server/camera_3", image_data);
+        
+        image_data = capture_image(camera=5, width=640, height=480, with_date_time_label=False, flip=False, light=False)
+        if not image_data:
+            return "It was not possible to generate an image", 500
+        save_file("/home/palermo/webcam-server/camera_5", image_data);
+    
+        return "Batch processed", 201
+    finally:
+            turn_light_off()
 
 
 def auto_brightness_contrast(image, clip_hist_percent=1):
