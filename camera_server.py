@@ -13,21 +13,24 @@ LINE_OFFSET = 72
 app = Flask(__name__)
 camera_lock = threading.Lock()
 
-def capture_image(camera=0, width=640, height=480, with_date_time_label = False, flip = False):
+
+def capture_image(camera=0, width=640, height=480, with_date_time_label=False, flip=False, light=False):
     with camera_lock:
-#        turn_light_on()
-#        time.sleep(0.3)
+        if (light):
+            turn_light_on()
+            time.sleep(0.3)
         cap = cv2.VideoCapture(camera, cv2.CAP_V4L2)
         try:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)        
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 #            cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.3)   # Range: 0.0–1.0 or device-specific
 #            cap.set(cv2.CAP_PROP_EXPOSURE, -4)      # Often negative values work (depends on camera)
 #            cap.set(cv2.CAP_PROP_GAIN, 0)           # Lower gain if image is noisy
             ret, frame = cap.read()
         finally:
             cap.release()
-#            turn_light_off()
+            if (light):
+                turn_light_off()
     if not ret:
         return None
     if flip:
@@ -114,22 +117,6 @@ def set_gpio(value: int):
         request.set_value(LINE_OFFSET, val)
 
 
-@app.route('/old')
-def serve_foto():
-
-    resolution = request.args.get("res", "640x480")  # default to 640x480 if not provided
-
-    try:
-        width, height = map(int, resolution.lower().split("x"))
-    except Exception:
-        return "Invalid resolution format. Use ?res=WIDTHxHEIGHT", 400
-
-    image = capture_image(0, width, height, True)
-    if image is None:
-        return "Erro ao capturar imagem", 500
-    return Response(image, mimetype='image/jpeg')
-
-
 @app.route('/')
 def serve_foto_with_date_label():
 
@@ -144,10 +131,13 @@ def serve_foto_with_date_label():
 
     flip = not(request.args.get("flip", "0") == "0")
 
-    image = capture_image(int(camera), width, height, True, flip)
+    light = not(request.args.get("light", "0") == "0")
+
+    image = capture_image(int(camera), width, height, True, flip, light)
     if image is None:
         return "Erro ao capturar imagem", 500
     return Response(image, mimetype='image/jpeg')
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, threaded=True, debug=True)
